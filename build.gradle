@@ -1,0 +1,18 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '1.5.21'
+}
+
+group = 'io.shreyash.rush.resolver'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8'
+    implementation 'com.squareup.tools.build:maven-archeologist:0.0.10'
+    implementation 'com.charleskorn.kaml:kaml-jvm:0.35.2'
+
+    implementation fileTree('libs')
+}
