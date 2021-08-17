@@ -5,54 +5,58 @@ import com.squareup.tools.maven.resolution.FetchStatus
 import com.squareup.tools.maven.resolution.FetchStatus.RepositoryFetchStatus.FETCH_ERROR
 import com.squareup.tools.maven.resolution.FetchStatus.RepositoryFetchStatus.NOT_FOUND
 import com.squareup.tools.maven.resolution.ResolvedArtifact
+import org.apache.maven.model.Dependency
 import java.util.regex.Pattern
+import kotlin.system.exitProcess
 import io.shreyash.rush.processor.model.DepScope
+
+data class RushDependency(
+    val artifact: ResolvedArtifact,
+    val scope: DepScope,
+)
+
+val Dependency.coordinate: String
+    get() {
+        val version = this.version.replace(
+            Pattern.compile("[\\[\\]]").toRegex(),
+            ""
+        )
+        return "${this.groupId}:${this.artifactId}:$version"
+    }
 
 class Resolver(private val artifactResolver: ArtifactResolver) {
 
-    /**
-     * Transitively resolves the artifact for the given [coordinate].
-     *
-     * @param coordinate    maven coordinate of the artifact
-     * @param mainScope     scope as defined in the metadata file
-     * @param exclude       coordinates that should not be resolved
-     * @return  [ResolvedArtifact] for [coordinate] and all it's dependencies
-     */
     fun resolveTransitively(
         coordinate: String,
-        mainScope: DepScope,
+        scope: DepScope,
         exclude: List<String>
-    ): List<ResolvedArtifact?> {
+    ): List<RushDependency> {
         println("Resolving -- $coordinate")
-        val artifact = artifactResolver.artifactFor(coordinate)
-        val (status, resolvedArtifact) = artifactResolver.resolve(artifact)
+
+        val (status, artifact) = artifactResolver.resolve(artifactResolver.artifactFor(coordinate))
         handleFetchStatusErr(coordinate, status)
+        if (artifact == null) return listOf()
 
-        val resolvedArtifacts = mutableListOf(resolvedArtifact)
-        val deps = resolvedArtifact?.model?.dependencies?.filter {
-            !it.isOptional && if (mainScope == DepScope.COMPILE_ONLY) {
-                it.scope == "compile"
+        val allArtifacts = mutableListOf(RushDependency(artifact, scope))
+
+        val deps = artifact.model.dependencies?.filter {
+            !it.isOptional && if (scope == DepScope.COMPILE_ONLY) {
+                it.scope == DepScope.COMPILE_ONLY.value
             } else {
-                it.scope == "runtime" || it.scope == "compile"
+                it.scope == DepScope.IMPLEMENT.value || it.scope == DepScope.COMPILE_ONLY.value
             }
-        }
+        } ?: listOf()
 
-        val resolvedDeps = deps?.map {
-            val version = it.version.replace(
-                Pattern.compile("[\\[\\]]").toRegex(),
-                ""
-            )
-            val depCoordinate = "${it.groupId}:${it.artifactId}:$version"
-
-            if (!exclude.contains(depCoordinate)) {
-                resolveTransitively(depCoordinate, mainScope, exclude)
+        val resolvedDep = deps.map {
+            if (!exclude.contains(it.coordinate)) {
+                resolveTransitively(it.coordinate, DepScope.fromString(it.scope)!!, exclude)
             } else {
                 listOf()
             }
-        }
-        resolvedDeps?.flatten()?.let { resolvedArtifacts.addAll(it) }
+        }.flatten()
 
-        return resolvedArtifacts
+        allArtifacts.addAll(resolvedDep)
+        return allArtifacts
     }
 
     fun downloadArtifact(resolvedArtifact: ResolvedArtifact) {
@@ -71,6 +75,7 @@ class Resolver(private val artifactResolver: ArtifactResolver) {
                     Hint: Have you declared the correct repository providing the artifact?
                 """.trimIndent()
                 )
+                exitProcess(1)
             }
             is FETCH_ERROR -> {
                 System.err.println(
@@ -80,9 +85,11 @@ class Resolver(private val artifactResolver: ArtifactResolver) {
                     Message: [${fetchStatus.responseCode}] ${fetchStatus.message}
                 """.trimIndent()
                 )
+                exitProcess(1)
             }
             FetchStatus.INVALID_HASH -> {
                 System.err.println("Hash validation failed for the coordinate: $coordinate")
+                exitProcess(1)
             }
             is FetchStatus.ERROR -> {
                 System.err.println(
@@ -91,6 +98,7 @@ class Resolver(private val artifactResolver: ArtifactResolver) {
                     ${fetchStatus.errors.keys.map { it + "\n" }}
                 """.trimIndent()
                 )
+                exitProcess(1)
             }
             else -> { /* Artifact resolved successfully! */
             }
