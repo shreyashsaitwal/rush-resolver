@@ -13,10 +13,16 @@ class Resolver(private val artifactResolver: ArtifactResolver) {
     /**
      * Transitively resolves the artifact for the given [coordinate].
      *
-     * @param mainScope scope as defined in the metadata file
-     * @return          [ResolvedArtifact] for [coordinate] and all it's dependencies
+     * @param coordinate    maven coordinate of the artifact
+     * @param mainScope     scope as defined in the metadata file
+     * @param exclude       coordinates that should not be resolved
+     * @return  [ResolvedArtifact] for [coordinate] and all it's dependencies
      */
-    fun resolveTransitively(coordinate: String, mainScope: DepScope): List<ResolvedArtifact?> {
+    fun resolveTransitively(
+        coordinate: String,
+        mainScope: DepScope,
+        exclude: List<String>
+    ): List<ResolvedArtifact?> {
         println("Resolving -- $coordinate")
         val artifact = artifactResolver.artifactFor(coordinate)
         val (status, resolvedArtifact) = artifactResolver.resolve(artifact)
@@ -37,7 +43,12 @@ class Resolver(private val artifactResolver: ArtifactResolver) {
                 ""
             )
             val depCoordinate = "${it.groupId}:${it.artifactId}:$version"
-            resolveTransitively(depCoordinate, mainScope)
+
+            if (!exclude.contains(depCoordinate)) {
+                resolveTransitively(depCoordinate, mainScope, exclude)
+            } else {
+                listOf()
+            }
         }
         resolvedDeps?.flatten()?.let { resolvedArtifacts.addAll(it) }
 

@@ -23,7 +23,7 @@ fun main(args: Array<String>) {
     )
 
     val artifacts = metadataFile.deps.map {
-        resolver.resolveTransitively(it.mvnCoordinate, it.scope)
+        resolver.resolveTransitively(it.mvnCoordinate, it.scope, it.exclude)
     }.flatten()
 
     artifacts.distinctBy { it?.coordinate }.filterNotNull().parallelStream()
