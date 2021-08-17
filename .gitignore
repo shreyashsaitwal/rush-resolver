@@ -1,4 +1,6 @@
+/gradle/wrapper/*.jar
+/misc/
+/build/
+
 local.properties
 .gradle
-gradle/wrapper/*.jar
-misc
