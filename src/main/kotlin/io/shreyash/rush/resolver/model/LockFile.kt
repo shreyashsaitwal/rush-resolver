@@ -13,5 +13,5 @@ data class ResolvedDep(
     @SerialName("coord") val coordinate: String,
     val scope: String,
     val type: String,
-    @SerialName("local_path") val localPath: String,
+    @SerialName("local_path") val localPath: String
 )

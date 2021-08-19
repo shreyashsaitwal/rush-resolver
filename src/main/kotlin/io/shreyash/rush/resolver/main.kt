@@ -16,7 +16,6 @@ import io.shreyash.rush.resolver.model.LockFile
 import io.shreyash.rush.resolver.model.ResolvedDep
 
 fun main(args: Array<String>) {
-    val metadataFile = metadataFile(args[0])
     val resolver = Resolver(
         ArtifactResolver(
             resolveGradleModule = false,
@@ -29,22 +28,32 @@ fun main(args: Array<String>) {
         )
     )
 
-    val deps = metadataFile.deps.filter { it.mvnCoordinate.contains(":") }
-
+    val metadataFile = metadataFile(args[0])
+    // Filter out the local JAR files.
+    val deps = metadataFile.deps.filter { it.value.contains(":") }
     println("INFO Fetching metadata...")
+
+    // Download POM files of all the `deps` and their transitive deps
     val artifacts = deps.map {
-        resolver.resolveTransitively(it.mvnCoordinate, it.scope, it.exclude)
+        resolver.resolveTransitively(it.value, it.scope, it.exclude)
     }.flatten()
 
     val sorted = artifacts
+        // Transitive resolution of deps results in duplicate artifacts, take only unique ones.
         .distinctBy { it.artifact.coordinate }
-        .groupBy { it.artifact.artifactId }
+        // Group different versions of same artifact.
+        .groupBy { it.artifact.groupId + it.artifact.artifactId }
+        // If multiple versions of a same artifacts are found...
         .map { (_, artifactList) ->
+            // ...first check if a specific version of this artifact was specifically defined in
+            // the metadata file...
             val explicit = artifactList.find {
                 it.artifact.coordinate.let {
-                    deps.any { dep -> dep.mvnCoordinate == it }
+                    deps.any { dep -> dep.value == it }
                 }
             }
+
+            // ...if it was, then take it, otherwise take the highest version.
             explicit ?: artifactList.sortedBy {
                 val version =
                     it.artifact.version.replace(Pattern.compile("[\\[\\]]").toRegex(), "")
@@ -54,12 +63,15 @@ fun main(args: Array<String>) {
 
     val resolved = sorted.parallelStream()
         .map {
+            // Download this artifact if it wasn't previously downloaded.
             if (!it.artifact.main.localFile.exists()) {
                 println("INFO Downloading: ${it.artifact.coordinate}...")
                 resolver.downloadArtifact(it.artifact)
             } else {
                 println("INFO Found in cache: ${it.artifact.coordinate}")
             }
+
+            // This will go in `rush.lock` for the Rush CLI to consume.
             ResolvedDep(
                 coordinate = it.artifact.coordinate,
                 scope = it.scope.value,
@@ -68,6 +80,7 @@ fun main(args: Array<String>) {
             )
         }.toList()
 
+    // Create and write the `rush.lock` file.
     val lockYaml = Yaml.default.encodeToString(LockFile.serializer(), LockFile(resolved))
     val lockFile = Paths.get(args[0], ".rush", "rush.lock").apply {
         if (!this.exists()) this.createFile()
@@ -75,6 +88,9 @@ fun main(args: Array<String>) {
     lockFile.writeText(lockYaml)
 }
 
+/**
+ * @return The metadata file for the Rush project in [projectRoot].
+ */
 fun metadataFile(projectRoot: String): RushYaml {
     val file = if (Paths.get(projectRoot, "rush.yml").exists()) {
         Paths.get(projectRoot, "rush.yml").toFile()

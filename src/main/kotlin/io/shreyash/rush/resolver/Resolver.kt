@@ -26,6 +26,12 @@ val Dependency.coordinate: String
 
 class Resolver(private val artifactResolver: ArtifactResolver) {
 
+    /**
+     * @param coordinate Maven coordinate of the artifact that is to be resolved.
+     * @param scope      [DepScope] of this artifact.
+     * @param exclude    List of coordinates that should not be resolved.
+     * @return           A list of [RushDependency] for the Maven artifacts for [coordinate] and it's transitive deps.
+     */
     fun resolveTransitively(
         coordinate: String,
         scope: DepScope,
@@ -38,12 +44,13 @@ class Resolver(private val artifactResolver: ArtifactResolver) {
         if (resolvedArtifact == null) {
             System.err.println(
                 """
-                ERROR Could not resolve POM file for: $coordinate
+                ERROR Could not locate POM file for: $coordinate
                 Fetch status: $status
                 """.trimIndent()
             )
             exitProcess(1)
         }
+
         val allArtifacts = mutableListOf(RushDependency(resolvedArtifact, scope))
 
         val deps = resolvedArtifact.model.dependencies?.filter {
@@ -66,11 +73,13 @@ class Resolver(private val artifactResolver: ArtifactResolver) {
         return allArtifacts
     }
 
+    /** Download the given [resolvedArtifact] */
     fun downloadArtifact(resolvedArtifact: ResolvedArtifact) {
         val status = artifactResolver.downloadArtifact(resolvedArtifact)
         handleFetchStatusErr(resolvedArtifact.coordinate, status)
     }
 
+    /** Handles the various fetch status errors by logging appropriate messages and exiting the process.*/
     private fun handleFetchStatusErr(coordinate: String, fetchStatus: FetchStatus) {
         when (fetchStatus) {
             NOT_FOUND -> {
