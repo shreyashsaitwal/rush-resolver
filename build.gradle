@@ -5,6 +5,12 @@ plugins {
 
 group = 'io.shreyash.rush'
 
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_1_8
+    }
+}
+
 repositories {
     mavenCentral()
 }
