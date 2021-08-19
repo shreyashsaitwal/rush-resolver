@@ -3,18 +3,23 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.serialization' version '1.5.21'
 }
 
-group = 'io.shreyash.rush.resolver'
-version = '1.0-SNAPSHOT'
+group = 'io.shreyash.rush'
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8'
     implementation 'com.squareup.tools.build:maven-archeologist:0.0.10'
     implementation 'com.charleskorn.kaml:kaml-jvm:0.35.2'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.2.2'
 
     implementation fileTree('libs')
+}
+
+configurations.implementation.setCanBeResolved(true)
+
+task copyImpl(type: Copy) {
+    from configurations.implementation
+    into 'build/implementation'
 }

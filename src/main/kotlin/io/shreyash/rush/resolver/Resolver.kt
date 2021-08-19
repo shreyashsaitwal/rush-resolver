@@ -31,15 +31,22 @@ class Resolver(private val artifactResolver: ArtifactResolver) {
         scope: DepScope,
         exclude: List<String>
     ): List<RushDependency> {
-        println("Resolving -- $coordinate")
-
-        val (status, artifact) = artifactResolver.resolve(artifactResolver.artifactFor(coordinate))
+        val artifact = artifactResolver.artifactFor(coordinate)
+        val (status, resolvedArtifact) = artifactResolver.resolve(artifact)
         handleFetchStatusErr(coordinate, status)
-        if (artifact == null) return listOf()
 
-        val allArtifacts = mutableListOf(RushDependency(artifact, scope))
+        if (resolvedArtifact == null) {
+            System.err.println(
+                """
+                ERROR Could not resolve POM file for: $coordinate
+                Fetch status: $status
+                """.trimIndent()
+            )
+            exitProcess(1)
+        }
+        val allArtifacts = mutableListOf(RushDependency(resolvedArtifact, scope))
 
-        val deps = artifact.model.dependencies?.filter {
+        val deps = resolvedArtifact.model.dependencies?.filter {
             !it.isOptional && if (scope == DepScope.COMPILE_ONLY) {
                 it.scope == DepScope.COMPILE_ONLY.value
             } else {
@@ -60,43 +67,36 @@ class Resolver(private val artifactResolver: ArtifactResolver) {
     }
 
     fun downloadArtifact(resolvedArtifact: ResolvedArtifact) {
-        println("Downloading -- ${resolvedArtifact.coordinate}")
         val status = artifactResolver.downloadArtifact(resolvedArtifact)
         handleFetchStatusErr(resolvedArtifact.coordinate, status)
-        println("Done -- ${resolvedArtifact.coordinate}")
     }
 
     private fun handleFetchStatusErr(coordinate: String, fetchStatus: FetchStatus) {
         when (fetchStatus) {
             NOT_FOUND -> {
-                System.err.println(
-                    """
-                    No artifact found for the coordinate: $coordinate
-                    Hint: Have you declared the correct repository providing the artifact?
-                """.trimIndent()
-                )
+                System.err.println("ERROR No artifact found for: $coordinate")
                 exitProcess(1)
             }
             is FETCH_ERROR -> {
                 System.err.println(
                     """
-                    Could not fetch the coordinate: $coordinate
+                    ERROR Could not fetch: $coordinate
                     Repository: ${fetchStatus.repository}
                     Message: [${fetchStatus.responseCode}] ${fetchStatus.message}
-                """.trimIndent()
+                    """.trimIndent()
                 )
                 exitProcess(1)
             }
             FetchStatus.INVALID_HASH -> {
-                System.err.println("Hash validation failed for the coordinate: $coordinate")
+                System.err.println("ERROR Hash validation failed for: $coordinate")
                 exitProcess(1)
             }
             is FetchStatus.ERROR -> {
                 System.err.println(
                     """
-                    Could not resolve the artifact for the coordinate: $coordinate
+                    ERROR Could not resolve the artifact for: $coordinate
                     ${fetchStatus.errors.keys.map { it + "\n" }}
-                """.trimIndent()
+                    """.trimIndent()
                 )
                 exitProcess(1)
             }

@@ -10,6 +10,7 @@ import java.util.regex.Pattern
 import kotlin.io.path.createFile
 import kotlin.io.path.exists
 import kotlin.io.path.writeText
+import kotlin.streams.toList
 import io.shreyash.rush.processor.model.RushYaml
 import io.shreyash.rush.resolver.model.LockFile
 import io.shreyash.rush.resolver.model.ResolvedDep
@@ -28,7 +29,10 @@ fun main(args: Array<String>) {
         )
     )
 
-    val artifacts = metadataFile.deps.map {
+    val deps = metadataFile.deps.filter { it.mvnCoordinate.contains(":") }
+
+    println("INFO Fetching metadata...")
+    val artifacts = deps.map {
         resolver.resolveTransitively(it.mvnCoordinate, it.scope, it.exclude)
     }.flatten()
 
@@ -36,19 +40,33 @@ fun main(args: Array<String>) {
         .distinctBy { it.artifact.coordinate }
         .groupBy { it.artifact.artifactId }
         .map { (_, artifactList) ->
-            artifactList.sortedBy {
-                val version = it.artifact.version.replace(Pattern.compile("[\\[\\]]").toRegex(), "")
+            val explicit = artifactList.find {
+                it.artifact.coordinate.let {
+                    deps.any { dep -> dep.mvnCoordinate == it }
+                }
+            }
+            explicit ?: artifactList.sortedBy {
+                val version =
+                    it.artifact.version.replace(Pattern.compile("[\\[\\]]").toRegex(), "")
                 MavenVersion.from(version)
             }[0]
         }
 
-    val resolved = sorted.map {
-        resolver.downloadArtifact(it.artifact)
-        ResolvedDep(
-            coordinate = it.artifact.coordinate,
-            scope = it.scope.value,
-        )
-    }
+    val resolved = sorted.parallelStream()
+        .map {
+            if (!it.artifact.main.localFile.exists()) {
+                println("INFO Downloading: ${it.artifact.coordinate}...")
+                resolver.downloadArtifact(it.artifact)
+            } else {
+                println("INFO Found in cache: ${it.artifact.coordinate}")
+            }
+            ResolvedDep(
+                coordinate = it.artifact.coordinate,
+                scope = it.scope.value,
+                type = it.artifact.suffix,
+                localPath = it.artifact.main.localFile.toString().replace("\\", "/")
+            )
+        }.toList()
 
     val lockYaml = Yaml.default.encodeToString(LockFile.serializer(), LockFile(resolved))
     val lockFile = Paths.get(args[0], ".rush", "rush.lock").apply {
