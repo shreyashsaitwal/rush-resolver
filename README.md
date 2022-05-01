@@ -1,3 +1,1 @@
-## 🚧 Rush Resolver
-
-Maven artifact resolver for extensions built with Rush.
+Made obsolete by the rush-cli/packages/resolver package.
